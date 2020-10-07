@@ -35,6 +35,10 @@ class TwoWayVerticalEnv(AbstractEnv):
             "action": {
                 "type": "DiscreteMetaAction",
             },
+            "screen_width": 200,
+            "screen_height": 800,
+            "centering_position": [0.5, 0.6],
+            "scaling": 5.5,
         })
         return config
 
@@ -60,7 +64,7 @@ class TwoWayVerticalEnv(AbstractEnv):
 
     def reset(self) -> np.ndarray:
         super().reset()
-        self._make_road()
+        self._make_road(length=10000)
         self._make_vehicles()
         return self.observation_type.observe()
 
@@ -92,7 +96,7 @@ class TwoWayVerticalEnv(AbstractEnv):
         road = self.road
         ego_vehicle = self.action_type.vehicle_class(road,
                                                      road.network.get_lane(("a", "b", 0)).position(0, 0),
-                                                     speed=30)
+                                                     heading=road.network.get_lane(("a", "b", 0)).heading_at(0), speed=30)
         road.vehicles.append(ego_vehicle)
         self.vehicle = ego_vehicle
 
