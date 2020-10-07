@@ -39,6 +39,10 @@ class TwoWayVerticalEnv(AbstractEnv):
             "screen_height": 800,
             "centering_position": [0.5, 0.6],
             "scaling": 5.5,
+            "road_lenght": 800,
+            "vehicles_same" : 5,
+            "vehicles_opposite" : 5,
+            "offroad_terminal": True
         })
         return config
 
@@ -56,7 +60,8 @@ class TwoWayVerticalEnv(AbstractEnv):
 
     def _is_terminal(self) -> bool:
         """The episode is over if the ego vehicle crashed or the time is out."""
-        return self.vehicle.crashed
+        return self.vehicle.crashed or \
+            (self.config["offroad_terminal"] and not self.vehicle.on_road)
 
     def _cost(self, action: int) -> float:
         """The constraint signal is the time spent driving on the opposite lane, and occurrence of collisions."""
@@ -64,7 +69,7 @@ class TwoWayVerticalEnv(AbstractEnv):
 
     def reset(self) -> np.ndarray:
         super().reset()
-        self._make_road(length=10000)
+        self._make_road(length=self.config["road_lenght"])
         self._make_vehicles()
         return self.observation_type.observe()
 
@@ -101,7 +106,7 @@ class TwoWayVerticalEnv(AbstractEnv):
         self.vehicle = ego_vehicle
 
         vehicles_type = utils.class_from_path(self.config["other_vehicles_type"])
-        for i in range(3):
+        for i in range(self.config["vehicles_same"]):
             self.road.vehicles.append(
                 vehicles_type(road,
                               position=road.network.get_lane(("a", "b", 0))
@@ -110,7 +115,7 @@ class TwoWayVerticalEnv(AbstractEnv):
                               speed=24 + 2*self.np_random.randn(),
                               enable_lane_change=False)
             )
-        for i in range(2):
+        for i in range(self.config["vehicles_opposite"]):
             v = vehicles_type(road,
                               position=road.network.get_lane(("b", "a", 0))
                               .position(200+100*i + 10*self.np_random.randn(), 0),
@@ -124,5 +129,4 @@ class TwoWayVerticalEnv(AbstractEnv):
 register(
     id='two-way-vertical-v0',
     entry_point='highway_env.envs:TwoWayVerticalEnv',
-    max_episode_steps=15
 )
