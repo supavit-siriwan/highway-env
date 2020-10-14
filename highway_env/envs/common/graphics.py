@@ -2,6 +2,7 @@ import os
 from typing import TYPE_CHECKING, Callable, List
 import numpy as np
 import pygame
+import pygame.joystick as pyjoy
 from gym.spaces import Discrete
 
 from highway_env.envs.common.action import ActionType, DiscreteMetaAction, ContinuousAction
@@ -11,7 +12,6 @@ from highway_env.vehicle.graphics import VehicleGraphics
 if TYPE_CHECKING:
     from highway_env.envs import AbstractEnv
     from highway_env.envs.common.abstract import Action
-
 
 class EnvViewer(object):
 
@@ -26,6 +26,9 @@ class EnvViewer(object):
         pygame.init()
         pygame.display.set_caption("Highway-env")
         panel_size = (self.env.config["screen_width"], self.env.config["screen_height"])
+
+        if pyjoy.get_count() > 0:
+            pyjoy.Joystick(0).init()
 
         # A display is not mandatory to draw things. Ignoring the display.set_mode()
         # instruction allows the drawing to be done on surfaces without
@@ -168,13 +171,13 @@ class EventHandler(object):
     def handle_discrete_action_event(cls, action_type: DiscreteMetaAction, event: pygame.event.EventType) -> None:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_RIGHT and action_type.longitudinal:
-                action_type.act(action_type.actions_indexes["FASTER"])
-            if event.key == pygame.K_LEFT and action_type.longitudinal:
-                action_type.act(action_type.actions_indexes["SLOWER"])
-            if event.key == pygame.K_DOWN and action_type.lateral:
                 action_type.act(action_type.actions_indexes["LANE_RIGHT"])
-            if event.key == pygame.K_UP:
+            if event.key == pygame.K_LEFT and action_type.longitudinal:
                 action_type.act(action_type.actions_indexes["LANE_LEFT"])
+            if event.key == pygame.K_DOWN and action_type.lateral:
+                action_type.act(action_type.actions_indexes["SLOWER"])
+            if event.key == pygame.K_UP:
+                action_type.act(action_type.actions_indexes["FASTER"])
 
     @classmethod
     def handle_continuous_action_event(cls, action_type: ContinuousAction, event: pygame.event.EventType) -> None:
@@ -198,4 +201,12 @@ class EventHandler(object):
                 action[0] = 0
             if event.key == pygame.K_UP and action_type.longitudinal:
                 action[0] = 0
+        elif pyjoy.get_count() > 0:
+            #Joystick
+            js_steering = pyjoy.Joystick(0).get_axis(0)
+            js_throttle = (pyjoy.Joystick(0).get_axis(4) - pyjoy.Joystick(0).get_axis(5))/2.0
+
+            action[steering_index] = 0.7*js_steering
+            action[0] = 0.7*js_throttle
+        
         action_type.act(action)
