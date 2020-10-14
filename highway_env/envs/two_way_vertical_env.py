@@ -40,7 +40,8 @@ class TwoWayVerticalEnv(AbstractEnv):
             "centering_position": [0.5, 0.6],
             "scaling": 5.5,
             "road_lenght": 800,
-            "init_speed": 30,
+            "ego_init_speed": 30,
+            "other_init_speed": 30,
             "vehicles_same" : 5,
             "vehicles_opposite" : 5,
             "offroad_terminal": False,
@@ -102,7 +103,7 @@ class TwoWayVerticalEnv(AbstractEnv):
         road = self.road
         ego_vehicle = self.action_type.vehicle_class(road,
                                                      road.network.get_lane(("a", "b", 0)).position(0, 0),
-                                                     heading=road.network.get_lane(("a", "b", 0)).heading_at(0), speed=self.config["init_speed"])
+                                                     heading=road.network.get_lane(("a", "b", 0)).heading_at(0), speed=self.config["ego_init_speed"])
         road.vehicles.append(ego_vehicle)
         self.vehicle = ego_vehicle
 
@@ -113,7 +114,7 @@ class TwoWayVerticalEnv(AbstractEnv):
                               position=road.network.get_lane(("a", "b", 0))
                               .position(70+40*i + 10*self.np_random.randn(), 0),
                               heading=road.network.get_lane(("a", "b", 0)).heading_at(70+40*i),
-                              speed=24 + 2*self.np_random.randn(),
+                              speed=self.config["other_init_speed"],
                               enable_lane_change=False)
             )
         for i in range(self.config["vehicles_opposite"]):
@@ -121,7 +122,7 @@ class TwoWayVerticalEnv(AbstractEnv):
                               position=road.network.get_lane(("b", "a", 0))
                               .position(200+100*i + 10*self.np_random.randn(), 0),
                               heading=road.network.get_lane(("b", "a", 0)).heading_at(200+100*i),
-                              speed=20 + 5*self.np_random.randn(),
+                              speed=self.config["other_init_speed"],
                               enable_lane_change=False)
             v.target_lane_index = ("b", "a", 0)
             self.road.vehicles.append(v)
