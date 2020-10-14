@@ -40,9 +40,11 @@ class TwoWayVerticalEnv(AbstractEnv):
             "centering_position": [0.5, 0.6],
             "scaling": 5.5,
             "road_lenght": 800,
+            "init_speed": 30,
             "vehicles_same" : 5,
             "vehicles_opposite" : 5,
-            "offroad_terminal": True
+            "offroad_terminal": False,
+            "manual_control": True
         })
         return config
 
@@ -54,8 +56,7 @@ class TwoWayVerticalEnv(AbstractEnv):
         """
         neighbours = self.road.network.all_side_lanes(self.vehicle.lane_index)
 
-        reward = self.HIGH_SPEED_REWARD * self.vehicle.speed_index / (self.vehicle.SPEED_COUNT - 1) \
-                 + self.LEFT_LANE_REWARD * (len(neighbours) - 1 - self.vehicle.target_lane_index[2]) / (len(neighbours) - 1)
+        reward = 0
         return reward
 
     def _is_terminal(self) -> bool:
@@ -101,7 +102,7 @@ class TwoWayVerticalEnv(AbstractEnv):
         road = self.road
         ego_vehicle = self.action_type.vehicle_class(road,
                                                      road.network.get_lane(("a", "b", 0)).position(0, 0),
-                                                     heading=road.network.get_lane(("a", "b", 0)).heading_at(0), speed=30)
+                                                     heading=road.network.get_lane(("a", "b", 0)).heading_at(0), speed=self.config["init_speed"])
         road.vehicles.append(ego_vehicle)
         self.vehicle = ego_vehicle
 
