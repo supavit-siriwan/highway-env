@@ -333,6 +333,39 @@ class AttributesObservation(ObservationType):
             attribute: getattr(self.env, attribute) for attribute in self.attributes
         }
 
+class LidarObservation(ObservationType):
+
+    """Observe a Lidar of nearby vehicles."""
+
+    ANGLE_LIMIT: List[float] = [0., 2*np.pi, np.deg2rad(1)]
+    RANGE_LIMIT: List[float] = [0., 100.]
+
+    def __init__(self,
+                 env: 'AbstractEnv',
+                 angle_limit: Optional[List[float]] = None,
+                 range_limit: Optional[List[float]] = None,
+                 **kwargs: dict) -> None:
+        """
+        :param env: The environment to observe
+        :param features: Names of features used in the observation
+        :param vehicles_count: Number of observed vehicles
+        """
+        self.env = env
+        self.angle_limit = np.array(angle_limit) if angle_limit is not None else np.array(self.ANGLE_LIMIT)
+        self.range_limit = np.array(range_limit) if range_limit is not None else np.array(self.RANGE_LIMIT)
+        
+        range_shape = np.asarray((self.angle_limit[1] - self.angle_limit[0]) / self.angle_limit[2], dtype=int)
+        self.range = np.zeros(range_shape, dtype=np.float32)
+
+    def space(self) -> spaces.Space:
+        return spaces.Box(shape=self.range.shape, low=self.range_limit[0], high=self.range_limit[1], dtype=np.float32)
+
+    def observe(self) -> np.ndarray:
+        if not self.env.road:
+            return np.zeros(self.space().shape)
+
+        obs = self.range
+        return obs
 
 def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
     if config["type"] == "TimeToCollision":
@@ -347,5 +380,7 @@ def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
         return GrayscaleObservation(env, config)
     elif config["type"] == "AttributesObservation":
         return AttributesObservation(env, **config)
+    elif config["type"] == "LidarObservation":
+        return LidarObservation(env, **config)
     else:
         raise ValueError("Unknown observation type")
