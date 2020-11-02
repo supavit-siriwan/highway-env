@@ -204,3 +204,51 @@ def is_consistent_dataset(data: dict, parameter_box: np.ndarray = None) -> bool:
         return is_valid_observation(y, phi, theta, gramian, beta)
     else:
         return True
+
+def is_line_intersect(line1: Tuple[Vector, Vector], line2: Tuple[Vector, Vector]) -> bool:
+    """
+    Check if line1 is intersect with line2
+
+    :param line1: (p, q)
+    :param line2: (r, s)
+    :return: intersect_status, intersect point [x,y]
+    """
+    intersect = False
+
+    # Point
+    p, q = line1
+    r, s = line2
+
+    # aX + bY = c
+    a1 = q[1] - p[1]
+    b1 = p[0] - q[0]
+    c1 = a1*p[0] + b1*p[1]
+
+    a2 = s[1] - r[1]
+    b2 = r[0] - s[0]
+    c2 = a2*r[0] + b2*r[1]
+
+    det = a1*b2 - a2*b1
+
+    if(det == 0):
+        # Line parallel
+        x = 0
+        y = 0
+    else:
+        x = (b2*c1 - b1*c2)/det
+        y = (a1*c2 - a2*c1)/det
+
+        if((min(p[0], q[0]) <= x <= max(p[0], q[0])) and (min(p[1], q[1]) <= y <= max(p[1], q[1]))):
+            intersect = True
+        else:
+            x = 0
+            y = 0
+
+    return intersect, [x, y]
+
+def distance(point1: Vector, point2: Vector):
+
+    x1, y1 = point1
+    x2, y2 = point2
+
+    return np.sqrt((x1-x2)**2 + (y1-y2)**2)
