@@ -112,16 +112,16 @@ class TwoWayVerticalEnv(AbstractEnv):
             self.road.vehicles.append(
                 vehicles_type(road,
                               position=road.network.get_lane(("a", "b", 0))
-                              .position(70+40*i + 10*self.np_random.randn(), 0),
-                              heading=road.network.get_lane(("a", "b", 0)).heading_at(70+40*i),
+                              .position(30+40*i + 10*self.np_random.randn(), 0),
+                              heading=road.network.get_lane(("a", "b", 0)).heading_at(30+40*i),
                               speed=self.config["other_init_speed"],
                               enable_lane_change=False)
             )
         for i in range(self.config["vehicles_opposite"]):
             v = vehicles_type(road,
                               position=road.network.get_lane(("b", "a", 0))
-                              .position(200+100*i + 10*self.np_random.randn(), 0),
-                              heading=road.network.get_lane(("b", "a", 0)).heading_at(200+100*i),
+                              .position(100+100*i + 10*self.np_random.randn(), 0),
+                              heading=road.network.get_lane(("b", "a", 0)).heading_at(100+100*i),
                               speed=self.config["other_init_speed"],
                               enable_lane_change=False)
             v.target_lane_index = ("b", "a", 0)

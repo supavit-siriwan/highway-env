@@ -357,6 +357,8 @@ class LidarObservation(ObservationType):
         range_shape = np.asarray((self.angle_limit[1] - self.angle_limit[0]) / self.angle_limit[2], dtype=int)
         self.range = np.zeros(range_shape, dtype=np.float32)
 
+        self.lidar_endpoint = np.zeros_like(self.range)
+
     def space(self) -> spaces.Space:
         return spaces.Box(shape=self.range.shape, low=self.range_limit[0], high=self.range_limit[1], dtype=np.float32)
 
@@ -364,6 +366,10 @@ class LidarObservation(ObservationType):
         if not self.env.road:
             return np.zeros(self.space().shape)
 
+        df = pd.DataFrame.from_records(
+                [v.to_dict(self.env.vehicle) for v in self.env.road.vehicles])
+
+        print(df)
         obs = self.range
         return obs
 
