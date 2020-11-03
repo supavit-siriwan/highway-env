@@ -158,8 +158,6 @@ class EnvViewer(object):
     def close(self) -> None:
         """Close the pygame window."""
         if pyjoy.get_init():
-            if pyjoy.Joystick(0).get_init():
-                pyjoy.Joystick(0).quit()
             pyjoy.quit()
         pygame.quit()
 
