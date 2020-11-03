@@ -223,7 +223,7 @@ class OccupancyGridObservation(ObservationType):
         self.features = features if features is not None else self.FEATURES
         self.grid_size = np.array(grid_size) if grid_size is not None else np.array(self.GRID_SIZE)
         self.grid_step = np.array(grid_step) if grid_step is not None else np.array(self.GRID_STEP)
-        grid_shape = np.asarray(np.floor((self.grid_size[:, 1] - self.grid_size[:, 0]) / grid_step), dtype=np.int)
+        grid_shape = np.asarray(np.floor((self.grid_size[:, 1] - self.grid_size[:, 0]) / self.grid_step), dtype=np.int)
         self.grid = np.zeros((len(self.features), *grid_shape))
         self.features_range = features_range
         self.absolute = absolute
@@ -333,15 +333,26 @@ class AttributesObservation(ObservationType):
             attribute: getattr(self.env, attribute) for attribute in self.attributes
         }
 
-class LidarObservation(ObservationType):
+class MyObservation(ObservationType):
 
     """Observe a Lidar of nearby vehicles."""
 
+    FEATURES: List[str] = ['static', 'dynamic']
+    GRID_SIZE: List[List[float]] = [[-5.5*5, 5.5*5], [-5.5*5, 5.5*5]]
+    GRID_STEP: List[int] = [5, 5]
     ANGLE_LIMIT: List[float] = [0., 2*np.pi, np.deg2rad(1)]
     RANGE_LIMIT: List[float] = [0., 100.]
 
+    LENGTH = 5.0
+    """ Vehicle length [m] """
+    WIDTH = 2.0
+    """ Vehicle width [m] """
+
     def __init__(self,
                  env: 'AbstractEnv',
+                 features: Optional[List[str]] = None,
+                 grid_size: Optional[List[List[float]]] = None,
+                 grid_step: Optional[List[int]] = None,
                  angle_limit: Optional[List[float]] = None,
                  range_limit: Optional[List[float]] = None,
                  **kwargs: dict) -> None:
@@ -351,25 +362,50 @@ class LidarObservation(ObservationType):
         :param vehicles_count: Number of observed vehicles
         """
         self.env = env
+        self.features = features if features is not None else self.FEATURES
+        self.grid_size = np.array(grid_size) if grid_size is not None else np.array(self.GRID_SIZE)
+        self.grid_step = np.array(grid_step) if grid_step is not None else np.array(self.GRID_STEP)
+        grid_shape = np.asarray(np.floor((self.grid_size[:, 1] - self.grid_size[:, 0]) / self.grid_step), dtype=np.int)
+        self.grid = np.zeros((len(self.features), *grid_shape))
+
+        # Lidar limitation
         self.angle_limit = np.array(angle_limit) if angle_limit is not None else np.array(self.ANGLE_LIMIT)
         self.range_limit = np.array(range_limit) if range_limit is not None else np.array(self.RANGE_LIMIT)
-        
-        range_shape = np.asarray((self.angle_limit[1] - self.angle_limit[0]) / self.angle_limit[2], dtype=int)
-        self.range = np.zeros(range_shape, dtype=np.float32)
-
-        self.lidar_endpoint = np.zeros_like(self.range)
+        self.__lidar_init()
 
     def space(self) -> spaces.Space:
-        return spaces.Box(shape=self.range.shape, low=self.range_limit[0], high=self.range_limit[1], dtype=np.float32)
+        return spaces.Box(shape=self.grid.shape, low=0, high=1, dtype=np.float32)
 
     def observe(self) -> np.ndarray:
+        if not self.env.road:
+            obs = np.zeros(self.space().shape)
+        else:
+            obs = self.__lidar()
+            # obs = np.clip(self.grid, -1, 1)
+        return obs
+
+    def __lidar_init(self):
+        angle_min, angle_max, angle_step_size = self.angle_limit
+
+        range_shape = np.asarray(abs(angle_max - angle_min) / angle_step_size, dtype=int)
+        self.range = np.zeros(range_shape, dtype=np.float32)
+        self.lidar_endpoint = np.zeros_like(self.range)
+
+    def __lidar(self) -> np.ndarray:
         if not self.env.road:
             return np.zeros(self.space().shape)
 
         df = pd.DataFrame.from_records(
                 [v.to_dict(self.env.vehicle) for v in self.env.road.vehicles])
 
+        df['distance'] = utils.distance([0., 0.],[df['x'], df['y']])
+        #df['conner_point'] = [[utils.corner_point([df['x']*df['y']], self.LENGTH, self.WIDTH, 0.0)]]
+
+        df.at[0, 'conner_point'] = np.array([[0,0]])
+        #df.at[1, 'conner_point'] = [1,1]
+        #df['conner_point'] = np.array([df['x'], df['y']])
         print(df)
+
         obs = self.range
         return obs
 
@@ -386,7 +422,7 @@ def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
         return GrayscaleObservation(env, config)
     elif config["type"] == "AttributesObservation":
         return AttributesObservation(env, **config)
-    elif config["type"] == "LidarObservation":
-        return LidarObservation(env, **config)
+    elif config["type"] == "MyObservation":
+        return MyObservation(env, **config)
     else:
         raise ValueError("Unknown observation type")
