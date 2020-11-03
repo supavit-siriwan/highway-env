@@ -27,8 +27,15 @@ class EnvViewer(object):
         pygame.display.set_caption("Highway-env")
         panel_size = (self.env.config["screen_width"], self.env.config["screen_height"])
 
-        if pyjoy.get_count() > 0:
-            pyjoy.Joystick(0).init()
+        if pyjoy.get_init():
+            if pyjoy.get_count() > 0:
+                print(f"Detect {pyjoy.get_count()} joysticks")
+                pyjoy.Joystick(0).init()
+                print(f"Connect with joysticks {pyjoy.Joystick(0).get_name()}")
+            else:
+                print("Cannot detect joystick")
+        else:
+            print("pygame.joystick init fail")
 
         # A display is not mandatory to draw things. Ignoring the display.set_mode()
         # instruction allows the drawing to be done on surfaces without
@@ -150,6 +157,10 @@ class EnvViewer(object):
 
     def close(self) -> None:
         """Close the pygame window."""
+        if pyjoy.get_init():
+            if pyjoy.Joystick(0).get_init():
+                pyjoy.Joystick(0).quit()
+            pyjoy.quit()
         pygame.quit()
 
 
@@ -201,12 +212,12 @@ class EventHandler(object):
                 action[0] = 0
             if event.key == pygame.K_UP and action_type.longitudinal:
                 action[0] = 0
-        elif pyjoy.get_count() > 0:
-            #Joystick
-            js_steering = pyjoy.Joystick(0).get_axis(0)
-            js_throttle = (pyjoy.Joystick(0).get_axis(4) - pyjoy.Joystick(0).get_axis(5))/2.0
+        elif event.type == pygame.JOYAXISMOTION:
+            if pyjoy.get_init() and pyjoy.Joystick(0).get_init():
+                js_steering = pyjoy.Joystick(0).get_axis(0)
+                js_throttle = (pyjoy.Joystick(0).get_axis(4) - pyjoy.Joystick(0).get_axis(5))/2.0
 
-            action[steering_index] = 0.7*js_steering
-            action[0] = 0.7*js_throttle
-        
+                action[steering_index] = 0.7*js_steering
+                action[0] = 0.7*js_throttle
+                
         action_type.act(action)
