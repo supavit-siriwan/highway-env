@@ -395,16 +395,34 @@ class MyObservation(ObservationType):
         if not self.env.road:
             return np.zeros(self.space().shape)
 
-        df = pd.DataFrame.from_records(
-                [v.to_dict(self.env.vehicle) for v in self.env.road.vehicles])
+        df_v = pd.DataFrame.from_records([v.to_dict(self.env.vehicle) for v in self.env.road.vehicles])
 
-        df['distance'] = utils.distance([0., 0.],[df['x'], df['y']])
-        #df['conner_point'] = [[utils.corner_point([df['x']*df['y']], self.LENGTH, self.WIDTH, 0.0)]]
+        df_v['distance'] = utils.distance([0., 0.],[df_v['x'], df_v['y']])
 
-        df.at[0, 'conner_point'] = np.array([[0,0]])
-        #df.at[1, 'conner_point'] = [1,1]
-        #df['conner_point'] = np.array([df['x'], df['y']])
-        print(df)
+        df_v['x1'] = np.nan
+        df_v['y1'] = np.nan
+        df_v['x2'] = np.nan
+        df_v['y2'] = np.nan
+        df_v['x3'] = np.nan
+        df_v['y3'] = np.nan
+        df_v['x4'] = np.nan
+        df_v['y4'] = np.nan
+
+        for i in df_v.index:
+            [x1, y1], [x2, y2], [x3, y3], [x4, y4] = utils.corner_point(([df_v['x'][i], df_v['y'][i]],
+                                                                         self.LENGTH,
+                                                                         self.WIDTH,
+                                                                         [df_v['cos_h'][i], df_v['sin_h'][i]]))
+            df_v['x1'][i] = x1
+            df_v['y1'][i] = y1
+            df_v['x2'][i] = x2
+            df_v['y2'][i] = y2
+            df_v['x3'][i] = x3
+            df_v['y3'][i] = y3
+            df_v['x4'][i] = x4
+            df_v['y4'][i] = y4
+
+        print(df_v)
 
         obs = self.range
         return obs

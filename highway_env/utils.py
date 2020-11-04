@@ -253,11 +253,11 @@ def distance(point1: Vector, point2: Vector):
 
     return np.sqrt((x1-x2)**2 + (y1-y2)**2)
 
-def corner_point(rect: Tuple[Vector, float, float, float]) -> Tuple[Vector, Vector, Vector, Vector]:
+def corner_point(rect: Tuple[Vector, float, float, Vector]) -> Tuple[Vector, Vector, Vector, Vector]:
     """
     Find conner point of rect
 
-    :param rect: (center, length, width, angle)
+    :param rect: (center: [x,y], length, width, angle: [cos_h, sin_h])
     """
 
     (center, length, width, angle) = rect
@@ -266,12 +266,15 @@ def corner_point(rect: Tuple[Vector, float, float, float]) -> Tuple[Vector, Vect
     wv = np.array([0., width/2])
     
     conner = np.array([- lv - wv,
-                        - lv + wv,
-                        + lv - wv,
-                        + lv + wv])
+                       - lv + wv,
+                       + lv + wv,
+                       + lv - wv])
 
-    rotate = np.array([[np.cos(angle), -np.sin(angle)],
-                       [np.sin(angle), np.cos(angle)]])
+    # rotate = np.array([[np.cos(angle), -np.sin(angle)],
+    #                    [np.sin(angle), np.cos(angle)]])
+
+    rotate = np.array([[angle[0], -angle[1]],
+                       [angle[1],  angle[0]]])
 
     rotated_conner = rotate.dot(conner.transpose()).transpose()
 
