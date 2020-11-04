@@ -337,16 +337,16 @@ class MyObservation(ObservationType):
 
     """Observe a Lidar of nearby vehicles."""
 
+    LENGTH = 5.0
+    """ Vehicle length [m] """
+    WIDTH = 2.0
+    """ Vehicle width [m] """
+
     FEATURES: List[str] = ['static', 'dynamic']
     GRID_SIZE: List[List[float]] = [[-5.5*5, 5.5*5], [-5.5*5, 5.5*5]]
     GRID_STEP: List[int] = [5, 5]
     ANGLE_LIMIT: List[float] = [0., 2*np.pi, np.deg2rad(1)]
     RANGE_LIMIT: List[float] = [0., 100.]
-
-    LENGTH = 5.0
-    """ Vehicle length [m] """
-    WIDTH = 2.0
-    """ Vehicle width [m] """
 
     def __init__(self,
                  env: 'AbstractEnv',
@@ -391,6 +391,10 @@ class MyObservation(ObservationType):
         self.range = np.zeros(range_shape, dtype=np.float32)
         self.lidar_endpoint = np.zeros_like(self.range)
 
+        data = {'angle': np.arange(angle_min, angle_max, angle_step_size)}
+        self.df_lidar = pd.DataFrame(data, columns=['angle', 'x_min', 'y_min', 'x_max', 'y_max', 'intersect', 'x_i', 'y_i', 'distance'])
+        self.df_lidar['intersect'] = False
+
     def __lidar(self) -> np.ndarray:
         if not self.env.road:
             return np.zeros(self.space().shape)
@@ -422,7 +426,45 @@ class MyObservation(ObservationType):
             df_v['x4'][i] = x4
             df_v['y4'][i] = y4
 
+        self.df_lidar['intersect'] = False
+        self.df_lidar['x_i'] = 0.
+        self.df_lidar['y_i'] = 0.
+        self.df_lidar['distance'] = 0.
+        self.df_lidar['x_min'] = self.range_limit[0]*np.cos(self.df_lidar['angle'])
+        self.df_lidar['y_min'] = self.range_limit[0]*np.sin(self.df_lidar['angle'])
+        self.df_lidar['x_max'] = self.range_limit[1]*np.cos(self.df_lidar['angle'])
+        self.df_lidar['y_max'] = self.range_limit[1]*np.sin(self.df_lidar['angle'])
+
+        for i in self.df_lidar.index:
+            line_lidar = ([self.df_lidar['x_min'][i], self.df_lidar['y_min'][i]],
+                          [self.df_lidar['x_max'][i], self.df_lidar['y_max'][i]])
+
+            for j in df_v.index:
+                if j == 0:
+                    continue
+                else:
+                    line0 = ([df_v['x1'][j], df_v['y1'][j]], [df_v['x2'][j], df_v['y2'][j]])
+                    line1 = ([df_v['x2'][j], df_v['y2'][j]], [df_v['x3'][j], df_v['y3'][j]])
+                    line2 = ([df_v['x3'][j], df_v['y3'][j]], [df_v['x4'][j], df_v['y4'][j]])
+                    line3 = ([df_v['x4'][j], df_v['y4'][j]], [df_v['x1'][j], df_v['y1'][j]])
+                    lines = [line0, line1, line2, line3]
+
+                    for line in lines:
+                        intersect, [x_i, y_i] = utils.is_line_intersect(line_lidar, line)
+                        if intersect:
+                            if self.df_lidar['intersect'][i] == False:
+                                self.df_lidar['intersect'][i] = True
+                                self.df_lidar['x_i'][i] = x_i
+                                self.df_lidar['y_i'][i] = y_i
+                                self.df_lidar['distance'][i] = utils.distance([0., 0.],[x_i, y_i])
+                            else:
+                                if utils.distance([0., 0.],[x_i, y_i]) < self.df_lidar['distance'][i]:
+                                    self.df_lidar['x_i'][i] = x_i
+                                    self.df_lidar['y_i'][i] = y_i
+                                    self.df_lidar['distance'][i] = utils.distance([0., 0.],[x_i, y_i])
+
         print(df_v)
+        print(self.df_lidar)
 
         obs = self.range
         return obs

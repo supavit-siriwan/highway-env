@@ -205,7 +205,7 @@ def is_consistent_dataset(data: dict, parameter_box: np.ndarray = None) -> bool:
     else:
         return True
 
-def is_line_intersect(line1: Tuple[Vector, Vector], line2: Tuple[Vector, Vector]) -> bool:
+def is_line_intersect(line1: Tuple[Vector, Vector], line2: Tuple[Vector, Vector]) -> Tuple[bool, Vector]:
     """
     Check if line1 is intersect with line2
 
@@ -238,7 +238,10 @@ def is_line_intersect(line1: Tuple[Vector, Vector], line2: Tuple[Vector, Vector]
         x = (b2*c1 - b1*c2)/det
         y = (a1*c2 - a2*c1)/det
 
-        if((min(p[0], q[0]) <= x <= max(p[0], q[0])) and (min(p[1], q[1]) <= y <= max(p[1], q[1]))):
+        if((min(p[0], q[0]) <= x <= max(p[0], q[0])) and
+           (min(r[0], s[0]) <= x <= max(r[0], s[0])) and
+           (min(p[1], q[1]) <= y <= max(p[1], q[1])) and
+           (min(r[1], s[1]) <= y <= max(r[1], s[1]))):
             intersect = True
         else:
             x = 0
@@ -246,7 +249,7 @@ def is_line_intersect(line1: Tuple[Vector, Vector], line2: Tuple[Vector, Vector]
 
     return intersect, [x, y]
 
-def distance(point1: Vector, point2: Vector):
+def distance(point1: Vector, point2: Vector) -> float:
 
     x1, y1 = point1
     x2, y2 = point2
