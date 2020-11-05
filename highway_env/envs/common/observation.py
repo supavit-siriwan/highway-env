@@ -391,9 +391,9 @@ class MyObservation(ObservationType):
         self.range = np.zeros(range_shape, dtype=np.float32)
         self.lidar_endpoint = np.zeros_like(self.range)
 
-        data = {'angle': np.arange(angle_min, angle_max, angle_step_size)}
-        self.df_lidar = pd.DataFrame(data, columns=['angle', 'x_min', 'y_min', 'x_max', 'y_max', 'intersect', 'x_i', 'y_i', 'distance'])
-        self.df_lidar['intersect'] = False
+        # data = {'angle': np.arange(angle_min, angle_max, angle_step_size)}
+        # self.df_lidar = pd.DataFrame(data, columns=['angle', 'x_min', 'y_min', 'x_max', 'y_max', 'intersect', 'x_i', 'y_i', 'distance'])
+        # self.df_lidar['intersect'] = False
 
     def __lidar(self) -> np.ndarray:
         if not self.env.road:
@@ -426,18 +426,25 @@ class MyObservation(ObservationType):
             df_v['x4'][i] = x4
             df_v['y4'][i] = y4
 
-        self.df_lidar['intersect'] = False
-        self.df_lidar['x_i'] = 0.
-        self.df_lidar['y_i'] = 0.
-        self.df_lidar['distance'] = 0.
-        self.df_lidar['x_min'] = self.range_limit[0]*np.cos(self.df_lidar['angle'])
-        self.df_lidar['y_min'] = self.range_limit[0]*np.sin(self.df_lidar['angle'])
-        self.df_lidar['x_max'] = self.range_limit[1]*np.cos(self.df_lidar['angle'])
-        self.df_lidar['y_max'] = self.range_limit[1]*np.sin(self.df_lidar['angle'])
+        angle_min, angle_max, angle_step_size = self.angle_limit
+        # data = {'angle': np.arange(angle_min, angle_max, angle_step_size)}
+        data = {'angle': np.arange(angle_min, angle_max, angle_step_size) + np.arccos(df_v['cos_h'][0])}
+        df_lidar = pd.DataFrame(data, columns=['angle', 'x_min', 'y_min', 'x_max', 'y_max', 'intersect', 'x_i', 'y_i', 'distance'])
 
-        for i in self.df_lidar.index:
-            line_lidar = ([self.df_lidar['x_min'][i], self.df_lidar['y_min'][i]],
-                          [self.df_lidar['x_max'][i], self.df_lidar['y_max'][i]])
+        df_lidar['intersect'] = False
+        df_lidar['x_i'] = 0.
+        df_lidar['y_i'] = 0.
+        df_lidar['distance'] = self.range_limit[1]
+        df_lidar['x_min'] = self.range_limit[0]*np.cos(df_lidar['angle'])
+        df_lidar['y_min'] = self.range_limit[0]*np.sin(df_lidar['angle'])
+        df_lidar['x_max'] = self.range_limit[1]*np.cos(df_lidar['angle'])
+        df_lidar['y_max'] = self.range_limit[1]*np.sin(df_lidar['angle'])
+
+        print(df_lidar)
+
+        for i in df_lidar.index:
+            line_lidar = ([df_lidar['x_min'][i], df_lidar['y_min'][i]],
+                          [df_lidar['x_max'][i], df_lidar['y_max'][i]])
 
             for j in df_v.index:
                 if j == 0:
@@ -452,21 +459,22 @@ class MyObservation(ObservationType):
                     for line in lines:
                         intersect, [x_i, y_i] = utils.is_line_intersect(line_lidar, line)
                         if intersect:
-                            if self.df_lidar['intersect'][i] == False:
-                                self.df_lidar['intersect'][i] = True
-                                self.df_lidar['x_i'][i] = x_i
-                                self.df_lidar['y_i'][i] = y_i
-                                self.df_lidar['distance'][i] = utils.distance([0., 0.],[x_i, y_i])
+                            if df_lidar['intersect'][i] == False:
+                                df_lidar['intersect'][i] = True
+                                df_lidar['x_i'][i] = x_i
+                                df_lidar['y_i'][i] = y_i
+                                df_lidar['distance'][i] = utils.distance([0., 0.],[x_i, y_i])
                             else:
-                                if utils.distance([0., 0.],[x_i, y_i]) < self.df_lidar['distance'][i]:
-                                    self.df_lidar['x_i'][i] = x_i
-                                    self.df_lidar['y_i'][i] = y_i
-                                    self.df_lidar['distance'][i] = utils.distance([0., 0.],[x_i, y_i])
+                                if utils.distance([0., 0.],[x_i, y_i]) < df_lidar['distance'][i]:
+                                    df_lidar['x_i'][i] = x_i
+                                    df_lidar['y_i'][i] = y_i
+                                    df_lidar['distance'][i] = utils.distance([0., 0.],[x_i, y_i])
 
-        print(df_v)
-        print(self.df_lidar)
+        # print(df_v)
+        # print(df_lidar)
 
-        obs = self.range
+        obs = df_lidar[['angle', 'distance']].to_numpy()
+
         return obs
 
 def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
