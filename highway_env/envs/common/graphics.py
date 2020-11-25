@@ -2,12 +2,13 @@ import os
 from typing import TYPE_CHECKING, Callable, List
 import numpy as np
 import pygame
-import pygame.joystick as pyjoy
 from gym.spaces import Discrete
 
-from highway_env.envs.common.action import ActionType, DiscreteMetaAction, ContinuousAction
+from highway_env.envs.common.action import ActionType, DiscreteMetaAction, ContinuousAction, MyAction
 from highway_env.road.graphics import WorldSurface, RoadGraphics
 from highway_env.vehicle.graphics import VehicleGraphics
+
+import time
 
 if TYPE_CHECKING:
     from highway_env.envs import AbstractEnv
@@ -24,18 +25,27 @@ class EnvViewer(object):
         self.offscreen = env.config["offscreen_rendering"]
 
         pygame.init()
-        pygame.display.set_caption("Highway-env")
-        panel_size = (self.env.config["screen_width"], self.env.config["screen_height"])
 
-        if pyjoy.get_init():
-            if pyjoy.get_count() > 0:
-                print(f"Detect {pyjoy.get_count()} joysticks")
-                pyjoy.Joystick(0).init()
-                print(f"Connect with joysticks {pyjoy.Joystick(0).get_name()}")
+        pygame.joystick.init()
+        if pygame.joystick.get_init():
+            print(f"Detect {pygame.joystick.get_count()} joysticks")
+            if pygame.joystick.get_count() > 0:
+                pygame.joystick.Joystick(0).init()
+                if pygame.joystick.Joystick(0).get_init():
+                    print(f"Connect with joysticks {pygame.joystick.Joystick(0).get_name()}")
+                else:
+                    print(f"Cannot connect with joysticks")
             else:
                 print("Cannot detect joystick")
         else:
             print("pygame.joystick init fail")
+
+        pygame.event.set_blocked(pygame.MOUSEMOTION)
+        print(pygame.event.get_blocked(pygame.MOUSEMOTION))
+        print(pygame.event.get_blocked(pygame.JOYAXISMOTION))
+
+        pygame.display.set_caption("Highway-env")
+        panel_size = (self.env.config["screen_width"], self.env.config["screen_height"])
 
         # A display is not mandatory to draw things. Ignoring the display.set_mode()
         # instruction allows the drawing to be done on surfaces without
@@ -92,7 +102,8 @@ class EnvViewer(object):
 
     def handle_events(self) -> None:
         """Handle pygame events by forwarding them to the display and environment vehicle."""
-        for event in pygame.event.get():
+        for event in pygame.event.get(eventtype=None, pump=True):
+            print(f"{event}")
             if event.type == pygame.QUIT:
                 self.env.close()
             self.sim_surface.handle_event(event)
@@ -157,8 +168,8 @@ class EnvViewer(object):
 
     def close(self) -> None:
         """Close the pygame window."""
-        if pyjoy.get_init():
-            pyjoy.quit()
+        if pygame.joystick.get_init():
+            pygame.joystick.quit()
         pygame.quit()
 
 
@@ -175,6 +186,8 @@ class EventHandler(object):
             cls.handle_discrete_action_event(action_type, event)
         elif isinstance(action_type, ContinuousAction):
             cls.handle_continuous_action_event(action_type, event)
+        elif isinstance(action_type, MyAction):
+            cls.handle_my_action_event(action_type, event)
 
     @classmethod
     def handle_discrete_action_event(cls, action_type: DiscreteMetaAction, event: pygame.event.EventType) -> None:
@@ -210,10 +223,38 @@ class EventHandler(object):
                 action[0] = 0
             if event.key == pygame.K_UP and action_type.longitudinal:
                 action[0] = 0
+        action_type.act(action)
+
+    @classmethod
+    def handle_my_action_event(cls, action_type: MyAction, event: pygame.event.EventType) -> None:
+        action = action_type.last_action.copy()
+        steering_index = action_type.space().shape[0] - 1
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RIGHT and action_type.lateral:
+                action[steering_index] = 0.7
+            if event.key == pygame.K_LEFT and action_type.lateral:
+                action[steering_index] = -0.7
+            if event.key == pygame.K_DOWN and action_type.longitudinal:
+                action[0] = -0.7
+            if event.key == pygame.K_UP and action_type.longitudinal:
+                action[0] = 0.7
+        elif event.type == pygame.KEYUP:
+            if event.key == pygame.K_RIGHT and action_type.lateral:
+                action[steering_index] = 0
+            if event.key == pygame.K_LEFT and action_type.lateral:
+                action[steering_index] = 0
+            if event.key == pygame.K_DOWN and action_type.longitudinal:
+                action[0] = 0
+            if event.key == pygame.K_UP and action_type.longitudinal:
+                action[0] = 0
         elif event.type == pygame.JOYAXISMOTION:
-            if pyjoy.get_init() and pyjoy.Joystick(0).get_init():
-                js_steering = pyjoy.Joystick(0).get_axis(0)
-                js_throttle = (pyjoy.Joystick(0).get_axis(4) - pyjoy.Joystick(0).get_axis(5))/2.0
+            if pygame.joystick.get_init() and pygame.joystick.Joystick(0).get_init():
+                if pygame.joystick.Joystick(0).get_name() == 'Logitech G29 Driving Force Racing Wheel':
+                    js_steering = pygame.joystick.Joystick(0).get_axis(0)
+                    js_throttle = (pygame.joystick.Joystick(0).get_axis(3) - pygame.joystick.Joystick(0).get_axis(2))/2.0
+                else:
+                    js_steering = pygame.joystick.Joystick(0).get_axis(0)
+                    js_throttle = (pygame.joystick.Joystick(0).get_axis(4) - pygame.joystick.Joystick(0).get_axis(5))/2.0
 
                 action[steering_index] = 0.7*js_steering
                 action[0] = 0.7*js_throttle

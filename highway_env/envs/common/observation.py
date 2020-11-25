@@ -440,7 +440,7 @@ class MyObservation(ObservationType):
         df_lidar['x_max'] = self.range_limit[1]*np.cos(df_lidar['angle'])
         df_lidar['y_max'] = self.range_limit[1]*np.sin(df_lidar['angle'])
 
-        print(df_lidar)
+        # print(df_lidar)
 
         for i in df_lidar.index:
             line_lidar = ([df_lidar['x_min'][i], df_lidar['y_min'][i]],
