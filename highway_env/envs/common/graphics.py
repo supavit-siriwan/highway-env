@@ -2,6 +2,7 @@ import os
 from typing import TYPE_CHECKING, Callable, List
 import numpy as np
 import pygame
+import pygame.joystick as pyjoy
 from gym.spaces import Discrete
 
 from highway_env.envs.common.action import ActionType, DiscreteMetaAction, ContinuousAction, MyAction
@@ -13,6 +14,9 @@ import time
 if TYPE_CHECKING:
     from highway_env.envs import AbstractEnv
     from highway_env.envs.common.abstract import Action
+
+JOY_NUM = 0
+JOY_NAME = ""
 
 class EnvViewer(object):
 
@@ -26,23 +30,22 @@ class EnvViewer(object):
 
         pygame.init()
 
-        pygame.joystick.init()
-        if pygame.joystick.get_init():
-            print(f"Detect {pygame.joystick.get_count()} joysticks")
-            if pygame.joystick.get_count() > 0:
-                pygame.joystick.Joystick(0).init()
-                if pygame.joystick.Joystick(0).get_init():
-                    print(f"Connect with joysticks {pygame.joystick.Joystick(0).get_name()}")
+        pyjoy.init()
+        if pyjoy.get_init():
+            print(f"Detect {pyjoy.get_count()} joysticks")
+            if pyjoy.get_count() > 0:
+                pyjoy.Joystick(JOY_NUM).init()
+                if pyjoy.Joystick(JOY_NUM).get_init():
+                    JOY_NAME = pyjoy.Joystick(0).get_name()
+                    print(f"Connect with joysticks {JOY_NAME}")
                 else:
                     print(f"Cannot connect with joysticks")
             else:
                 print("Cannot detect joystick")
         else:
-            print("pygame.joystick init fail")
+            print("pyjoy init fail")
 
         pygame.event.set_blocked(pygame.MOUSEMOTION)
-        print(pygame.event.get_blocked(pygame.MOUSEMOTION))
-        print(pygame.event.get_blocked(pygame.JOYAXISMOTION))
 
         pygame.display.set_caption("Highway-env")
         panel_size = (self.env.config["screen_width"], self.env.config["screen_height"])
@@ -102,8 +105,7 @@ class EnvViewer(object):
 
     def handle_events(self) -> None:
         """Handle pygame events by forwarding them to the display and environment vehicle."""
-        for event in pygame.event.get(eventtype=None, pump=True):
-            print(f"{event}")
+        for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.env.close()
             self.sim_surface.handle_event(event)
@@ -168,8 +170,8 @@ class EnvViewer(object):
 
     def close(self) -> None:
         """Close the pygame window."""
-        if pygame.joystick.get_init():
-            pygame.joystick.quit()
+        if pyjoy.get_init():
+            pyjoy.quit()
         pygame.quit()
 
 
@@ -223,10 +225,13 @@ class EventHandler(object):
                 action[0] = 0
             if event.key == pygame.K_UP and action_type.longitudinal:
                 action[0] = 0
+
         action_type.act(action)
 
     @classmethod
     def handle_my_action_event(cls, action_type: MyAction, event: pygame.event.EventType) -> None:
+        joy_R2_ready = False
+        joy_L2_ready = False
         action = action_type.last_action.copy()
         steering_index = action_type.space().shape[0] - 1
         if event.type == pygame.KEYDOWN:
@@ -248,15 +253,23 @@ class EventHandler(object):
             if event.key == pygame.K_UP and action_type.longitudinal:
                 action[0] = 0
         elif event.type == pygame.JOYAXISMOTION:
-            if pygame.joystick.get_init() and pygame.joystick.Joystick(0).get_init():
-                if pygame.joystick.Joystick(0).get_name() == 'Logitech G29 Driving Force Racing Wheel':
-                    js_steering = pygame.joystick.Joystick(0).get_axis(0)
-                    js_throttle = (pygame.joystick.Joystick(0).get_axis(3) - pygame.joystick.Joystick(0).get_axis(2))/2.0
-                else:
-                    js_steering = pygame.joystick.Joystick(0).get_axis(0)
-                    js_throttle = (pygame.joystick.Joystick(0).get_axis(4) - pygame.joystick.Joystick(0).get_axis(5))/2.0
+            if JOY_NAME == 'Logitech G29 Driving Force Racing Wheel':
+                js_steering = pyjoy.Joystick(JOY_NUM).get_axis(0)
+                js_throttle = (pyjoy.Joystick(JOY_NUM).get_axis(3) - pyjoy.Joystick(JOY_NUM).get_axis(2))/2.0
+            else:
+                js_steering = pyjoy.Joystick(JOY_NUM).get_axis(0)
 
-                action[steering_index] = 0.7*js_steering
-                action[0] = 0.7*js_throttle
+                if((not joy_R2_ready) and (pyjoy.Joystick(JOY_NUM).get_axis(5) != 0)):
+                    joy_R2_ready = True
+                if((not joy_L2_ready) and (pyjoy.Joystick(JOY_NUM).get_axis(2) != 0)):
+                    joy_L2_ready = True
+
+                if(joy_R2_ready and joy_L2_ready):
+                    js_throttle = (pyjoy.Joystick(JOY_NUM).get_axis(5) - pyjoy.Joystick(JOY_NUM).get_axis(2))/2.0
+                else:
+                    js_throttle = 0.0
+
+            action[steering_index] = 0.7*js_steering
+            action[0] = 0.7*js_throttle
                 
         action_type.act(action)
