@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from highway_env.envs.common.abstract import Action
 
 JOY_NUM = 0
-JOY_NAME = ""
+JOY_WHEEL = True
 
 class EnvViewer(object):
 
@@ -36,8 +36,7 @@ class EnvViewer(object):
             if pyjoy.get_count() > 0:
                 pyjoy.Joystick(JOY_NUM).init()
                 if pyjoy.Joystick(JOY_NUM).get_init():
-                    JOY_NAME = pyjoy.Joystick(0).get_name()
-                    print(f"Connect with joysticks {JOY_NAME}")
+                    print(f"Connect with joysticks {pyjoy.Joystick(0).get_name()}")
                 else:
                     print(f"Cannot connect with joysticks")
             else:
@@ -253,7 +252,7 @@ class EventHandler(object):
             if event.key == pygame.K_UP and action_type.longitudinal:
                 action[0] = 0
         elif event.type == pygame.JOYAXISMOTION:
-            if JOY_NAME == 'Logitech G29 Driving Force Racing Wheel':
+            if JOY_WHEEL:
                 js_steering = pyjoy.Joystick(JOY_NUM).get_axis(0)
                 js_throttle = (pyjoy.Joystick(JOY_NUM).get_axis(3) - pyjoy.Joystick(JOY_NUM).get_axis(2))/2.0
             else:
@@ -269,7 +268,7 @@ class EventHandler(object):
                 else:
                     js_throttle = 0.0
 
-            action[steering_index] = 0.7*js_steering
-            action[0] = 0.7*js_throttle
-                
+            action[steering_index] = js_steering
+            action[0] = js_throttle
+
         action_type.act(action)
