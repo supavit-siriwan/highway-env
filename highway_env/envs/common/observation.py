@@ -440,8 +440,7 @@ class MyObservation(ObservationType):
         df_lidar['x_max'] = self.range_limit[1]*np.cos(df_lidar['angle'])
         df_lidar['y_max'] = self.range_limit[1]*np.sin(df_lidar['angle'])
 
-        # print(df_lidar)
-
+        # TODO improve performance in this loop
         for i in df_lidar.index:
             line_lidar = ([df_lidar['x_min'][i], df_lidar['y_min'][i]],
                           [df_lidar['x_max'][i], df_lidar['y_max'][i]])
@@ -469,9 +468,6 @@ class MyObservation(ObservationType):
                                     df_lidar['x_i'][i] = x_i
                                     df_lidar['y_i'][i] = y_i
                                     df_lidar['distance'][i] = utils.distance([0., 0.],[x_i, y_i])
-
-        # print(df_v)
-        # print(df_lidar)
 
         obs = df_lidar[['angle', 'distance']].to_numpy()
 

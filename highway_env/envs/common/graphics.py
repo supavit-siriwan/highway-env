@@ -148,6 +148,7 @@ class EnvViewer(object):
         if not self.offscreen:
             self.screen.blit(self.sim_surface, (0, 0))
             self.clock.tick(self.env.config["simulation_frequency"])
+            print(f'fps={self.clock.get_fps()}')
             pygame.display.flip()
 
         if self.SAVE_IMAGES and self.directory:
