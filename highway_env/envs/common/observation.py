@@ -448,6 +448,9 @@ class MyObservation(ObservationType):
             for j in df_v.index:
                 if j == 0:
                     continue
+                elif utils.distance([0.,0.], [df_v['x'][j], df_v['y'][j]]) >= df_lidar['distance'][i] + 5.0:
+                    continue
+                ## TODO elif angle not in line of sight for reduce process
                 else:
                     line0 = ([df_v['x1'][j], df_v['y1'][j]], [df_v['x2'][j], df_v['y2'][j]])
                     line1 = ([df_v['x2'][j], df_v['y2'][j]], [df_v['x3'][j], df_v['y3'][j]])
