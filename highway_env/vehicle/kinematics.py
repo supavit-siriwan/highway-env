@@ -1,20 +1,14 @@
-from typing import Union, TYPE_CHECKING
+from typing import Union, Optional
 import numpy as np
-import pandas as pd
 from collections import deque
 
 from highway_env import utils
-from highway_env.logger import Loggable
-from highway_env.road.lane import AbstractLane
 from highway_env.road.road import Road, LaneIndex
-from highway_env.road.objects import Obstacle, Landmark
+from highway_env.vehicle.objects import RoadObject, Obstacle, Landmark
 from highway_env.types import Vector
 
-if TYPE_CHECKING:
-    from highway_env.road.objects import RoadObject
 
-
-class Vehicle(Loggable):
+class Vehicle(RoadObject):
 
     """
     A moving vehicle on a road, and its kinematics.
@@ -40,14 +34,10 @@ class Vehicle(Loggable):
                  position: Vector,
                  heading: float = 0,
                  speed: float = 0):
-        self.road = road
-        self.position = np.array(position).astype('float')
-        self.heading = heading
-        self.speed = speed
-        self.lane_index = self.road.network.get_closest_lane_index(self.position) if self.road else np.nan
-        self.lane = self.road.network.get_lane(self.lane_index) if self.road else None
+        super().__init__(road, position, heading, speed)
         self.action = {'steering': 0, 'acceleration': 0}
         self.crashed = False
+        self.impact = None
         self.log = []
         self.history = deque(maxlen=30)
 
@@ -68,7 +58,13 @@ class Vehicle(Loggable):
         return cls(road, lane.position(longitudinal, 0), lane.heading_at(longitudinal), speed)
 
     @classmethod
-    def create_random(cls, road: Road, speed: float = None, spacing: float = 1) -> "Vehicle":
+    def create_random(cls, road: Road,
+                      speed: float = None,
+                      lane_from: Optional[str] = None,
+                      lane_to: Optional[str] = None,
+                      lane_id: Optional[int] = None,
+                      spacing: float = 1) \
+            -> "Vehicle":
         """
         Create a random vehicle on the road.
 
@@ -77,17 +73,23 @@ class Vehicle(Loggable):
 
         :param road: the road where the vehicle is driving
         :param speed: initial speed in [m/s]. If None, will be chosen randomly
+        :param lane_from: start node of the lane to spawn in
+        :param lane_to: end node of the lane to spawn in
+        :param lane_id: id of the lane to spawn in
         :param spacing: ratio of spacing to the front vehicle, 1 being the default
         :return: A vehicle with random position and/or speed
         """
-        if speed is None:
-            speed = road.np_random.uniform(Vehicle.DEFAULT_SPEEDS[0], Vehicle.DEFAULT_SPEEDS[1])
-        default_spacing = 1.5*speed
-        _from = road.np_random.choice(list(road.network.graph.keys()))
-        _to = road.np_random.choice(list(road.network.graph[_from].keys()))
-        _id = road.np_random.choice(len(road.network.graph[_from][_to]))
+        _from = lane_from or road.np_random.choice(list(road.network.graph.keys()))
+        _to = lane_to or road.np_random.choice(list(road.network.graph[_from].keys()))
+        _id = lane_id if lane_id is not None else road.np_random.choice(len(road.network.graph[_from][_to]))
         lane = road.network.get_lane((_from, _to, _id))
-        offset = spacing * default_spacing * np.exp(-5 / 30 * len(road.network.graph[_from][_to]))
+        if speed is None:
+            if lane.speed_limit is not None:
+                speed = road.np_random.uniform(0.7*lane.speed_limit, lane.speed_limit)
+            else:
+                speed = road.np_random.uniform(Vehicle.DEFAULT_SPEEDS[0], Vehicle.DEFAULT_SPEEDS[1])
+        default_spacing = 15+1.2*speed
+        offset = spacing * default_spacing * np.exp(-5 / 40 * len(road.network.graph[_from][_to]))
         x0 = np.max([lane.local_coordinates(v.position)[0] for v in road.vehicles]) \
             if len(road.vehicles) else 3*offset
         x0 += offset * road.np_random.uniform(0.9, 1.1)
@@ -132,6 +134,10 @@ class Vehicle(Loggable):
         v = self.speed * np.array([np.cos(self.heading + beta),
                                    np.sin(self.heading + beta)])
         self.position += v * dt
+        if self.impact is not None:
+            self.position += self.impact
+            self.crashed = True
+            self.impact = None
         self.heading += self.speed * np.sin(beta) / (self.LENGTH / 2) * dt
         self.speed += self.action['acceleration'] * dt
         self.on_state_update()
@@ -149,63 +155,49 @@ class Vehicle(Loggable):
 
     def on_state_update(self) -> None:
         if self.road:
-            self.lane_index = self.road.network.get_closest_lane_index(self.position)
+            self.lane_index = self.road.network.get_closest_lane_index(self.position, self.heading)
             self.lane = self.road.network.get_lane(self.lane_index)
             if self.road.record_history:
                 self.history.appendleft(self.create_from(self))
 
-    def lane_distance_to(self, vehicle: "Vehicle", lane: AbstractLane = None) -> float:
-        """
-        Compute the signed distance to another vehicle along a lane.
-
-        :param vehicle: the other vehicle
-        :param lane: a lane
-        :return: the distance to the other vehicle [m]
-        """
-        if not vehicle:
-            return np.nan
-        if not lane:
-            lane = self.lane
-        return lane.local_coordinates(vehicle.position)[0] - lane.local_coordinates(self.position)[0]
-
-    def check_collision(self, other: Union['Vehicle', 'RoadObject']) -> None:
+    def check_collision(self, other: 'RoadObject', dt: float = 0) -> None:
         """
         Check for collision with another vehicle.
 
         :param other: the other vehicle or object
+        :param dt: timestep to check for future collisions (at constant velocity)
         """
-        if self.crashed or other is self:
+        if other is self:
             return
 
         if isinstance(other, Vehicle):
             if not self.COLLISIONS_ENABLED or not other.COLLISIONS_ENABLED:
                 return
-
-            if self._is_colliding(other):
-                self.speed = other.speed = min([self.speed, other.speed], key=abs)
+            intersecting, will_intersect, transition = self._is_colliding(other, dt)
+            if will_intersect:
+                self.impact = transition / 2
+                other.impact = -transition / 2
+            if intersecting:
                 self.crashed = other.crashed = True
         elif isinstance(other, Obstacle):
             if not self.COLLISIONS_ENABLED:
                 return
-
-            if self._is_colliding(other):
-                self.speed = min([self.speed, 0], key=abs)
+            intersecting, will_intersect, transition = self._is_colliding(other, dt)
+            if will_intersect:
+                self.impact = transition
+            if intersecting:
                 self.crashed = other.hit = True
         elif isinstance(other, Landmark):
-            if self._is_colliding(other):
+            intersecting, will_intersect, transition = self._is_colliding(other, dt)
+            if intersecting:
                 other.hit = True
 
-    def _is_colliding(self, other):
+    def _is_colliding(self, other, dt):
         # Fast spherical pre-check
-        if np.linalg.norm(other.position - self.position) > self.LENGTH:
-            return False
+        if np.linalg.norm(other.position - self.position) > self.LENGTH + self.speed * dt:
+            return False, False, np.zeros(2,)
         # Accurate rectangular check
-        return utils.rotated_rectangles_intersect((self.position, 0.9*self.LENGTH, 0.9*self.WIDTH, self.heading),
-                                                  (other.position, 0.9*other.LENGTH, 0.9*other.WIDTH, other.heading))
-
-    @property
-    def direction(self) -> np.ndarray:
-        return np.array([np.cos(self.heading), np.sin(self.heading)])
+        return utils.are_polygons_intersecting(self.polygon(), other.polygon(), self.velocity * dt, other.velocity * dt)
 
     @property
     def velocity(self) -> np.ndarray:
@@ -214,7 +206,9 @@ class Vehicle(Loggable):
     @property
     def destination(self) -> np.ndarray:
         if getattr(self, "route", None):
-            last_lane = self.road.network.get_lane(self.route[-1])
+            last_lane_index = self.route[-1]
+            last_lane_index = last_lane_index if last_lane_index[-1] is not None else (*last_lane_index[:-1], 0)
+            last_lane = self.road.network.get_lane(last_lane_index)
             return last_lane.position(last_lane.length, 0)
         else:
             return self.position
@@ -226,14 +220,6 @@ class Vehicle(Loggable):
         else:
             return np.zeros((2,))
 
-    @property
-    def on_road(self) -> bool:
-        """ Is the vehicle on its current lane, or off-road ? """
-        return self.lane.on_lane(self.position)
-
-    def front_distance_to(self, other: "Vehicle") -> float:
-        return self.direction.dot(other.position - self.position)
-
     def to_dict(self, origin_vehicle: "Vehicle" = None, observe_intentions: bool = True) -> dict:
         d = {
             'presence': 1,
@@ -241,6 +227,7 @@ class Vehicle(Loggable):
             'y': self.position[1],
             'vx': self.velocity[0],
             'vy': self.velocity[1],
+            'heading': self.heading,
             'cos_h': self.direction[0],
             'sin_h': self.direction[1],
             'cos_d': self.destination_direction[0],
@@ -253,53 +240,6 @@ class Vehicle(Loggable):
             for key in ['x', 'y', 'vx', 'vy']:
                 d[key] -= origin_dict[key]
         return d
-
-    def dump(self) -> None:
-        """
-        Update the internal log of the vehicle
-
-        The log contains:
-        - its kinematics;
-        - some metrics relative to its neighbour vehicles.
-        """
-        data = {
-            'x': self.position[0],
-            'y': self.position[1],
-            'psi': self.heading,
-            'vx': self.speed * np.cos(self.heading),
-            'vy': self.speed * np.sin(self.heading),
-            'v': self.speed,
-            'acceleration': self.action['acceleration'],
-            'steering': self.action['steering']}
-
-        if self.road:
-            for lane_index in self.road.network.side_lanes(self.lane_index):
-                lane_coords = self.road.network.get_lane(lane_index).local_coordinates(self.position)
-                data.update({
-                    'dy_lane_{}'.format(lane_index): lane_coords[1],
-                    'psi_lane_{}'.format(lane_index): self.road.network.get_lane(lane_index).heading_at(lane_coords[0])
-                })
-            front_vehicle, rear_vehicle = self.road.neighbour_vehicles(self)
-            if front_vehicle:
-                data.update({
-                    'front_v': front_vehicle.speed,
-                    'front_distance': self.lane_distance_to(front_vehicle)
-                })
-            if rear_vehicle:
-                data.update({
-                    'rear_v': rear_vehicle.speed,
-                    'rear_distance': rear_vehicle.lane_distance_to(self)
-                })
-
-        self.log.append(data)
-
-    def get_log(self) -> pd.DataFrame:
-        """
-        Cast the internal log as a DataFrame.
-
-        :return: the DataFrame of the Vehicle's log.
-        """
-        return pd.DataFrame(self.log)
 
     def __str__(self):
         return "{} #{}: {}".format(self.__class__.__name__, id(self) % 1000, self.position)

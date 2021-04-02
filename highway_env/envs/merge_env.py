@@ -5,8 +5,8 @@ from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv
 from highway_env.road.lane import LineType, StraightLane, SineLane
 from highway_env.road.road import Road, RoadNetwork
-from highway_env.vehicle.controller import ControlledVehicle, MDPVehicle
-from highway_env.road.objects import Obstacle
+from highway_env.vehicle.controller import ControlledVehicle
+from highway_env.vehicle.objects import Obstacle
 
 
 class MergeEnv(AbstractEnv):
@@ -58,11 +58,9 @@ class MergeEnv(AbstractEnv):
         """The episode is over when a collision occurs or when the access ramp has been passed."""
         return self.vehicle.crashed or self.vehicle.position[0] > 370
 
-    def reset(self) -> np.ndarray:
-        super().reset()
+    def _reset(self) -> None:
         self._make_road()
         self._make_vehicles()
-        return self.observation_type.observe()
 
     def _make_road(self) -> None:
         """

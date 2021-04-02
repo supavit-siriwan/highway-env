@@ -13,7 +13,7 @@ from highway_env.vehicle.controller import MDPVehicle
 from highway_env.vehicle.kinematics import Vehicle
 
 if TYPE_CHECKING:
-    from highway_env.road.objects import RoadObject
+    from highway_env.vehicle.objects import RoadObject
 
 Polytope = Tuple[np.ndarray, List[np.ndarray]]
 
@@ -124,7 +124,7 @@ class IntervalVehicle(LinearVehicle):
         lanes = self.get_followed_lanes()
         for lane_index in lanes:
             lane = self.road.network.get_lane(lane_index)
-            longitudinal_pursuit = lane.local_coordinates(self.position)[0] + self.speed * self.PURSUIT_TAU
+            longitudinal_pursuit = lane.local_coordinates(self.position)[0] + self.speed * self.TAU_PURSUIT
             lane_psi = lane.heading_at(longitudinal_pursuit)
             _, lateral_i = interval_absolute_to_local(position_i, lane)
             lateral_i = -np.flip(lateral_i)
@@ -174,7 +174,7 @@ class IntervalVehicle(LinearVehicle):
         self.interval.position[:, 1] += dy_i * dt
 
         # Add noise
-        noise = 1
+        noise = 0.3
         self.interval.position[:, 0] += noise * dt * np.array([-1, 1])
         self.interval.position[:, 1] += noise * dt * np.array([-1, 1])
         self.interval.heading += noise * dt * np.array([-1, 1])
@@ -363,7 +363,7 @@ class IntervalVehicle(LinearVehicle):
         self.trajectory.append(LinearVehicle.create_from(self))
         self.interval_trajectory.append(copy.deepcopy(self.interval))
 
-    def check_collision(self, other: Union['Vehicle', 'RoadObject']) -> None:
+    def check_collision(self, other: 'RoadObject', dt: float) -> None:
         """
         Worst-case collision check.
 
@@ -371,6 +371,7 @@ class IntervalVehicle(LinearVehicle):
         which corresponds to worst-case outcome.
 
         :param other: the other vehicle
+        :param dt: a timestep
         """
         if not isinstance(other, MDPVehicle):
             super().check_collision(other)

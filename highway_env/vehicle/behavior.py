@@ -7,7 +7,6 @@ from highway_env.types import Vector
 from highway_env.vehicle.controller import ControlledVehicle
 from highway_env import utils
 from highway_env.vehicle.kinematics import Vehicle
-from highway_env.road.objects import RoadObject
 
 
 class IDMVehicle(ControlledVehicle):
@@ -87,7 +86,6 @@ class IDMVehicle(ControlledVehicle):
         if self.crashed:
             return
         action = {}
-        front_vehicle, rear_vehicle = self.road.neighbour_vehicles(self)
         # Lateral: MOBIL
         self.follow_road()
         if self.enable_lane_change:
@@ -96,9 +94,17 @@ class IDMVehicle(ControlledVehicle):
         action['steering'] = np.clip(action['steering'], -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
 
         # Longitudinal: IDM
+        front_vehicle, rear_vehicle = self.road.neighbour_vehicles(self, self.lane_index)
         action['acceleration'] = self.acceleration(ego_vehicle=self,
                                                    front_vehicle=front_vehicle,
                                                    rear_vehicle=rear_vehicle)
+        # When changing lane, check both current and target lanes
+        if self.lane_index != self.target_lane_index:
+            front_vehicle, rear_vehicle = self.road.neighbour_vehicles(self, self.target_lane_index)
+            target_idm_acceleration = self.acceleration(ego_vehicle=self,
+                                                        front_vehicle=front_vehicle,
+                                                        rear_vehicle=rear_vehicle)
+            action['acceleration'] = min(action['acceleration'], target_idm_acceleration)
         # action['acceleration'] = self.recover_from_stop(action['acceleration'])
         action['acceleration'] = np.clip(action['acceleration'], -self.ACC_MAX, self.ACC_MAX)
         Vehicle.act(self, action)  # Skip ControlledVehicle.act(), or the command will be overriden.
@@ -132,7 +138,7 @@ class IDMVehicle(ControlledVehicle):
         :param rear_vehicle: the vehicle following the ego-vehicle
         :return: the acceleration command for the ego-vehicle [m/s2]
         """
-        if not ego_vehicle or isinstance(ego_vehicle, RoadObject):
+        if not ego_vehicle or not isinstance(ego_vehicle, Vehicle):
             return 0
         ego_target_speed = utils.not_zero(getattr(ego_vehicle, "target_speed", 0))
         acceleration = self.COMFORT_ACC_MAX * (
@@ -144,18 +150,20 @@ class IDMVehicle(ControlledVehicle):
                 np.power(self.desired_gap(ego_vehicle, front_vehicle) / utils.not_zero(d), 2)
         return acceleration
 
-    def desired_gap(self, ego_vehicle: Vehicle, front_vehicle: Vehicle = None) -> float:
+    def desired_gap(self, ego_vehicle: Vehicle, front_vehicle: Vehicle = None, projected: bool = True) -> float:
         """
         Compute the desired distance between a vehicle and its leading vehicle.
 
         :param ego_vehicle: the vehicle being controlled
         :param front_vehicle: its leading vehicle
+        :param projected: project 2D velocities in 1D space
         :return: the desired distance between the two [m]
         """
         d0 = self.DISTANCE_WANTED
         tau = self.TIME_WANTED
         ab = -self.COMFORT_ACC_MAX * self.COMFORT_ACC_MIN
-        dv = ego_vehicle.speed - front_vehicle.speed
+        dv = np.dot(ego_vehicle.velocity - front_vehicle.velocity, ego_vehicle.direction) if projected \
+            else ego_vehicle.speed - front_vehicle.speed
         d_star = d0 + ego_vehicle.speed * tau + ego_vehicle.speed * dv / (2 * np.sqrt(ab))
         return d_star
 
@@ -385,7 +393,7 @@ class LinearVehicle(IDMVehicle):
         """
         lane = self.road.network.get_lane(target_lane_index)
         lane_coords = lane.local_coordinates(self.position)
-        lane_next_coords = lane_coords[0] + self.speed * self.PURSUIT_TAU
+        lane_next_coords = lane_coords[0] + self.speed * self.TAU_PURSUIT
         lane_future_heading = lane.heading_at(lane_next_coords)
         features = np.array([utils.wrap_to_pi(lane_future_heading - self.heading) *
                              self.LENGTH / utils.not_zero(self.speed),

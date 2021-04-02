@@ -1,15 +1,12 @@
 import numpy as np
-import pandas as pd
 import logging
 from typing import List, Tuple, Dict, TYPE_CHECKING, Optional
 
-from highway_env.logger import Loggable
 from highway_env.road.lane import LineType, StraightLane, AbstractLane
-from highway_env.road.objects import Landmark
+from highway_env.vehicle.objects import Landmark
 
 if TYPE_CHECKING:
-    from highway_env.vehicle import kinematics
-    from highway_env.road import objects
+    from highway_env.vehicle import kinematics, objects
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +46,19 @@ class RoadNetwork(object):
             _id = 0
         return self.graph[_from][_to][_id]
 
-    def get_closest_lane_index(self, position: np.ndarray) -> LaneIndex:
+    def get_closest_lane_index(self, position: np.ndarray, heading: Optional[float] = None) -> LaneIndex:
         """
         Get the index of the lane closest to a world position.
 
         :param position: a world position [m].
+        :param heading: a heading angle [rad].
         :return: the index of the closest lane.
         """
         indexes, distances = [], []
         for _from, to_dict in self.graph.items():
             for _to, lanes in to_dict.items():
                 for _id, l in enumerate(lanes):
-                    distances.append(l.distance(position))
+                    distances.append(l.distance_with_heading(position, heading))
                     indexes.append((_from, _to, _id))
         return indexes[int(np.argmin(distances))]
 
@@ -73,40 +71,53 @@ class RoadNetwork(object):
         - Else, pick next road randomly.
         - If it has the same number of lanes as current road, stay in the same lane.
         - Else, pick next road's closest lane.
-        :param current_index: the index of the current lane.
+        :param current_index: the index of the current target lane.
         :param route: the planned route, if any.
         :param position: the vehicle position.
         :param np_random: a source of randomness.
         :return: the index of the next lane to be followed when current lane is finished.
         """
         _from, _to, _id = current_index
-        next_to = None
+        next_to = next_id = None
         # Pick next road according to planned route
         if route:
             if route[0][:2] == current_index[:2]:  # We just finished the first step of the route, drop it.
                 route.pop(0)
             if route and route[0][0] == _to:  # Next road in route is starting at the end of current road.
-                _, next_to, _ = route[0]
+                _, next_to, next_id = route[0]
             elif route:
                 logger.warning("Route {} does not start after current road {}.".format(route[0], current_index))
-        # Randomly pick next road
-        if not next_to:
-            try:
-                next_to = list(self.graph[_to].keys())[np_random.randint(len(self.graph[_to]))]
-            except KeyError:
-                # logger.warning("End of lane reached.")
-                return current_index
 
+        # Compute current projected (desired) position
+        long, lat = self.get_lane(current_index).local_coordinates(position)
+        projected_position = self.get_lane(current_index).position(long, lateral=0)
+        # If next route is not known
+        if not next_to:
+            # Pick the one with the closest lane to projected target position
+            try:
+                lanes_dists = [(next_to,
+                                *self.next_lane_given_next_road(_from, _to, _id, next_to, next_id, projected_position))
+                               for next_to in self.graph[_to].keys()]  # (next_to, next_id, distance)
+                next_to, next_id, _ = min(lanes_dists, key=lambda x: x[-1])
+            except KeyError:
+                return current_index
+        else:
+            # If it is known, follow it and get the closest lane
+            next_id, _ = self.next_lane_given_next_road(_from, _to, _id, next_to, next_id, projected_position)
+        return _to, next_to, next_id
+
+    def next_lane_given_next_road(self, _from: str, _to: str, _id: int,
+                                  next_to: str, next_id: int, position: np.ndarray) -> Tuple[int, float]:
         # If next road has same number of lane, stay on the same lane
         if len(self.graph[_from][_to]) == len(self.graph[_to][next_to]):
-            next_id = _id
+            if next_id is None:
+                next_id = _id
         # Else, pick closest lane
         else:
             lanes = range(len(self.graph[_to][next_to]))
             next_id = min(lanes,
                           key=lambda l: self.get_lane((_to, next_to, l)).distance(position))
-
-        return _to, next_to, next_id
+        return next_id, self.get_lane((_to, next_to, next_id)).distance(position)
 
     def bfs_paths(self, start: str, goal: str) -> List[List[str]]:
         """
@@ -201,17 +212,24 @@ class RoadNetwork(object):
         return [lane for to in self.graph.values() for ids in to.values() for lane in ids]
 
     @staticmethod
-    def straight_road_network(lanes: int = 4, length: float = 10000, angle: float = 0) -> 'RoadNetwork':
-        net = RoadNetwork()
+    def straight_road_network(lanes: int = 4,
+                              start: float = 0,
+                              length: float = 10000,
+                              angle: float = 0,
+                              nodes_str: Optional[Tuple[str, str]] = None,
+                              net: Optional['RoadNetwork'] = None) \
+            -> 'RoadNetwork':
+        net = net or RoadNetwork()
+        nodes_str = nodes_str or ("0", "1")
         for lane in range(lanes):
-            origin = np.array([0, lane * StraightLane.DEFAULT_WIDTH])
-            end = np.array([length, lane * StraightLane.DEFAULT_WIDTH])
+            origin = np.array([start, lane * StraightLane.DEFAULT_WIDTH])
+            end = np.array([start + length, lane * StraightLane.DEFAULT_WIDTH])
             rotation = np.array([[np.cos(angle), np.sin(angle)], [-np.sin(angle), np.cos(angle)]])
             origin = rotation @ origin
             end = rotation @ end
             line_types = [LineType.CONTINUOUS_LINE if lane == 0 else LineType.STRIPED,
                           LineType.CONTINUOUS_LINE if lane == lanes - 1 else LineType.NONE]
-            net.add_lane("0", "1", StraightLane(origin, end, line_types=line_types))
+            net.add_lane(*nodes_str, StraightLane(origin, end, line_types=line_types))
         return net
 
     def position_heading_along_route(self, route: Route, longitudinal: float, lateral: float) \
@@ -230,7 +248,7 @@ class RoadNetwork(object):
         return self.get_lane(route[0]).position(longitudinal, lateral), self.get_lane(route[0]).heading_at(longitudinal)
 
 
-class Road(Loggable):
+class Road(object):
 
     """A road is a set of lanes, and a set of vehicles driving on these lanes."""
 
@@ -280,11 +298,11 @@ class Road(Loggable):
         """
         for vehicle in self.vehicles:
             vehicle.step(dt)
-        for vehicle in self.vehicles:
-            for other in self.vehicles:
-                vehicle.check_collision(other)
+        for i, vehicle in enumerate(self.vehicles):
+            for other in self.vehicles[i+1:]:
+                vehicle.check_collision(other, dt)
             for other in self.objects:
-                vehicle.check_collision(other)
+                vehicle.check_collision(other, dt)
 
     def neighbour_vehicles(self, vehicle: 'kinematics.Vehicle', lane_index: LaneIndex = None) \
             -> Tuple[Optional['kinematics.Vehicle'], Optional['kinematics.Vehicle']]:
@@ -317,19 +335,6 @@ class Road(Loggable):
                     s_rear = s_v
                     v_rear = v
         return v_front, v_rear
-
-    def dump(self) -> None:
-        """Dump the data of all entities on the road."""
-        for v in self.vehicles:
-            v.dump()
-
-    def get_log(self) -> pd.DataFrame:
-        """
-        Concatenate the logs of all entities on the road.
-
-        :return: the concatenated log.
-        """
-        return pd.concat([v.get_log() for v in self.vehicles])
 
     def __repr__(self):
         return self.vehicles.__repr__()
